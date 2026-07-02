@@ -18,6 +18,7 @@ from wafer_mixed.data import (
     encode_map,
     load_raw,
     load_splits,
+    subsample_indices,
 )
 
 _NPZ = REPO_ROOT / "data" / "raw" / "MixedWM38.npz"
@@ -101,6 +102,55 @@ def test_combo_helpers():
 
 def test_label_names_count():
     assert len(LABEL_NAMES) == NUM_LABELS == 8
+
+
+# ---------------------------------------------------------------------------
+# Train-fraction subsampling (Phase 2 low-data arms)
+# ---------------------------------------------------------------------------
+
+def _synthetic_split(n_per_combo: int = 100, n_combos: int = 5):
+    """Labels with n_combos distinct combinations, n_per_combo rows each,
+    interleaved so strata are not contiguous. Returns (idx, labels)."""
+    combos = np.eye(NUM_LABELS, dtype=np.int32)[:n_combos]
+    labels = np.tile(combos, (n_per_combo, 1))
+    # a non-trivial "train split": every other row
+    idx = np.arange(0, len(labels), 2)
+    return idx, labels
+
+
+def test_subsample_fraction_one_is_identity():
+    idx, labels = _synthetic_split()
+    out = subsample_indices(idx, labels, 1.0, seed=42)
+    np.testing.assert_array_equal(out, idx)
+
+
+def test_subsample_is_deterministic_and_seed_sensitive():
+    idx, labels = _synthetic_split()
+    a = subsample_indices(idx, labels, 0.1, seed=42)
+    b = subsample_indices(idx, labels, 0.1, seed=42)
+    c = subsample_indices(idx, labels, 0.1, seed=43)
+    np.testing.assert_array_equal(a, b)
+    assert not np.array_equal(a, c), "different seeds must select different maps"
+
+
+def test_subsample_size_subset_and_stratification():
+    idx, labels = _synthetic_split(n_per_combo=100, n_combos=5)
+    out = subsample_indices(idx, labels, 0.1, seed=42)
+    # subset of the input split — never invents indices (no val/test leakage)
+    assert np.isin(out, idx).all()
+    assert len(np.unique(out)) == len(out)
+    # 5 combos × 50 train rows × 0.1 = 5 per combo, 25 total
+    assert len(out) == 25
+    per_combo = np.unique(combo_ids(labels[out]), return_counts=True)[1]
+    np.testing.assert_array_equal(per_combo, [5] * 5)
+
+
+def test_subsample_keeps_every_combo_at_tiny_fraction():
+    """max(1, ·) floor: rare combos survive even below one expected row."""
+    idx, labels = _synthetic_split(n_per_combo=100, n_combos=5)
+    out = subsample_indices(idx, labels, 0.001, seed=42)
+    assert len(np.unique(combo_ids(labels[out]))) == 5
+    assert len(out) == 5  # exactly the floor
 
 
 # ---------------------------------------------------------------------------

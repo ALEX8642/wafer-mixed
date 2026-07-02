@@ -194,6 +194,31 @@ def make_splits(cfg: MixedConfig, labels: np.ndarray) -> None:
     )
 
 
+def subsample_indices(
+    idx: np.ndarray, labels: np.ndarray, fraction: float, seed: int
+) -> np.ndarray:
+    """
+    Deterministic stratified subsample of split indices for the Phase 2
+    low-data arms: keep max(1, round(fraction * count)) rows per 38-combo
+    stratum, so even at 1 % every combination — including the 149-map single
+    Near-full — stays represented. Seeded independently of torch/global
+    state, so a given (fraction, seed) selects the identical subset in every
+    arm: the transfer comparison runs on the same maps.
+
+    `labels` is the full label array; `idx` indexes into it.
+    """
+    if fraction >= 1.0:
+        return idx
+    rng = np.random.default_rng(seed)
+    strata = combo_ids(labels[idx])
+    keep = [
+        rng.choice(idx[strata == s], size=max(1, round(fraction * (strata == s).sum())),
+                   replace=False)
+        for s in np.unique(strata)
+    ]
+    return np.sort(np.concatenate(keep))
+
+
 def load_splits(cfg: MixedConfig) -> Dict[str, np.ndarray]:
     """Load persisted split indices. Raises if make_splits has not been run."""
     if not cfg.split_path.exists():
@@ -213,6 +238,13 @@ def get_dataloaders(cfg: MixedConfig) -> Tuple[DataLoader, DataLoader, DataLoade
     """Return (train_loader, val_loader, test_loader) over the persisted split."""
     maps, labels = load_raw(cfg.data_root)
     splits = load_splits(cfg)
+    if cfg.train_fraction < 1.0:
+        full = len(splits["train"])
+        splits["train"] = subsample_indices(
+            splits["train"], labels, cfg.train_fraction, cfg.seed
+        )
+        print(f"  Train subsample: {len(splits['train']):,}/{full:,} maps "
+              f"(fraction {cfg.train_fraction}, seed {cfg.seed}, stratified by combo)")
 
     def _loader(name: str, shuffle: bool) -> DataLoader:
         idx = splits[name]

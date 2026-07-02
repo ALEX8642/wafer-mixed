@@ -79,9 +79,8 @@ def _epoch(
                 scaler.update()
 
             total_loss += loss.item() * inputs.size(0)
-            # all_preds.append(predict_multihot(torch.sigmoid(logits.float()).cpu().numpy()))
             all_preds.append(predict_multihot(torch.sigmoid(logits.float()).detach().cpu().numpy()))
-	    # the loader already gave us targets on CPU — no round trip needed
+            # the loader already gave us targets on CPU — no round trip needed
             all_targets.append(targets_cpu.numpy().astype(np.int64))
 
     avg_loss = total_loss / len(loader.dataset)
@@ -89,7 +88,45 @@ def _epoch(
     return avg_loss, f1
 
 
-def train(cfg: MixedConfig) -> None:
+def load_donor_backbone(model: nn.Module, ckpt_path: str, device: str) -> int:
+    """
+    Initialise `model`'s backbone from a donor checkpoint (Phase 2 transfer
+    arms). Returns the number of tensors loaded.
+
+    Two donor formats exist: SSL exports carry "backbone_state_dict"
+    (headless), supervised checkpoints carry "model_state_dict" (full model
+    incl. head). Either works — the head is dropped before loading: a 9-class
+    WM-811K fc (9,512) against our 8-logit fc would make load_state_dict
+    raise on the shape mismatch even with strict=False. Heads never transfer.
+    """
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    if "backbone_state_dict" in ckpt:
+        state = ckpt["backbone_state_dict"]
+    elif "model_state_dict" in ckpt:
+        state = ckpt["model_state_dict"]
+    else:
+        raise KeyError(
+            f"{ckpt_path} has neither 'backbone_state_dict' nor "
+            f"'model_state_dict' (keys: {list(ckpt)}). Not a known donor format."
+        )
+    state = {k: v for k, v in state.items() if not k.startswith("fc.")}
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    # Actually-loaded = source keys the model accepted = source - unexpected.
+    n_loaded = len(state) - len(unexpected)
+    print(f"Pretrained backbone: loaded {n_loaded}/{len(state)} tensors from "
+          f"{ckpt_path}  (missing={len(missing)}, unexpected={len(unexpected)})")
+    # Guard: an architecture mismatch (e.g. cbam flag differs) silently
+    # loads almost nothing and wastes the pretraining. Fail loud instead.
+    if n_loaded < 0.5 * len(state):
+        raise RuntimeError(
+            f"Only {n_loaded}/{len(state)} pretrained tensors matched the model. "
+            f"Architecture mismatch (likely cbam flag differs between pretrain and "
+            f"fine-tune). Pretrain with the SAME cbam setting as baseline.yaml."
+        )
+    return n_loaded
+
+
+def train(cfg: MixedConfig) -> dict:
     set_seed(cfg.seed)
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     device = cfg.device
@@ -103,25 +140,7 @@ def train(cfg: MixedConfig) -> None:
 
     model = build_model(cfg).to(device)
     if cfg.backbone_ckpt_path:
-        bb_ckpt = torch.load(cfg.backbone_ckpt_path, map_location=device, weights_only=False)
-        bb_state = bb_ckpt["backbone_state_dict"]
-        # Drop any classifier head from the source: a 9-class WM-811K head
-        # (9,512) against our 8-logit fc would make load_state_dict raise on
-        # the shape mismatch even with strict=False. Heads never transfer.
-        bb_state = {k: v for k, v in bb_state.items() if not k.startswith("fc.")}
-        missing, unexpected = model.load_state_dict(bb_state, strict=False)
-        # Actually-loaded = source keys the model accepted = source - unexpected.
-        n_loaded = len(bb_state) - len(unexpected)
-        print(f"Pretrained backbone: loaded {n_loaded}/{len(bb_state)} tensors from "
-              f"{cfg.backbone_ckpt_path}  (missing={len(missing)}, unexpected={len(unexpected)})")
-        # Guard: an architecture mismatch (e.g. cbam flag differs) silently
-        # loads almost nothing and wastes the pretraining. Fail loud instead.
-        if n_loaded < 0.5 * len(bb_state):
-            raise RuntimeError(
-                f"Only {n_loaded}/{len(bb_state)} pretrained tensors matched the model. "
-                f"Architecture mismatch (likely cbam flag differs between pretrain and "
-                f"fine-tune). Pretrain with the SAME cbam setting as baseline.yaml."
-            )
+        load_donor_backbone(model, cfg.backbone_ckpt_path, device)
 
     criterion = nn.BCEWithLogitsLoss()
     print("Loss: BCEWithLogitsLoss (8 independent labels, no pos_weight — "
@@ -175,6 +194,13 @@ def train(cfg: MixedConfig) -> None:
 
     print(f"\nDone. Best val macro-F1 (8 labels @0.5): {best_val_f1:.4f}")
     print(f"Checkpoint : {ckpt_path}")
+    # Consumed by scripts/transfer_study.py; the CLI path ignores it.
+    return {
+        "best_val_f1": best_val_f1,
+        "epochs_run": epoch,
+        "n_train": len(train_loader.dataset),
+        "ckpt_path": ckpt_path,
+    }
 
 
 if __name__ == "__main__":

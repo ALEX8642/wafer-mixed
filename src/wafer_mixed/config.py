@@ -86,6 +86,7 @@ class MixedConfig:
 
     # --- transfer study (Phase 2 uses this; empty = random init) ---
     backbone_ckpt_path: str = ""   # path to a backbone checkpoint from the main repo / wafer-ssl
+    train_fraction: float = 1.0    # stratified subsample of the train split (val/test untouched)
 
     def __post_init__(self) -> None:
         self.data_root = _anchor(Path(self.data_root))
@@ -93,6 +94,10 @@ class MixedConfig:
         self.split_path = _anchor(Path(self.split_path))
         if self.backbone_ckpt_path:
             self.backbone_ckpt_path = str(_anchor(Path(self.backbone_ckpt_path)))
+        if not 0.0 < self.train_fraction <= 1.0:
+            raise ValueError(
+                f"train_fraction must be in (0, 1], got {self.train_fraction}"
+            )
         self.device = _resolve_device(self.device)
 
     @classmethod
@@ -167,4 +172,6 @@ def build_arg_parser(description: str = "wafer-mixed") -> argparse.ArgumentParse
                    help="CBAM channel reduction ratio (default 16)")
     p.add_argument("--backbone-ckpt-path", dest="backbone_ckpt_path", type=str, default=None,
                    help="Path to a pretrained backbone checkpoint; empty = random init")
+    p.add_argument("--train-fraction", dest="train_fraction", type=float, default=None,
+                   help="Stratified subsample of the train split, e.g. 0.1 (val/test untouched)")
     return p

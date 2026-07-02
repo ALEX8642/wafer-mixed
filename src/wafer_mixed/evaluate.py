@@ -50,6 +50,26 @@ def _fmt(x: float, spec: str = ".4f") -> str:
     return "—" if np.isnan(x) else format(x, spec)
 
 
+def collect_probs(
+    model: torch.nn.Module, loader, device: str,
+    desc: str = "Evaluating", leave: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Run the model over a loader. Returns (y_true (N,8) int64, sigmoid probs
+    (N,8) float). Single implementation of the prediction-collection loop,
+    shared with scripts/transfer_study.py so a future decision-rule change
+    (e.g. Phase 3 per-label thresholds applied to probs) lands in one place.
+    """
+    all_probs: list[np.ndarray] = []
+    all_targets: list[np.ndarray] = []
+    for inputs, targets in tqdm(loader, desc=desc, leave=leave):
+        with torch.no_grad():
+            logits = model(inputs.to(device, non_blocking=True))
+        all_probs.append(torch.sigmoid(logits.float()).cpu().numpy())
+        all_targets.append(targets.numpy().astype(np.int64))
+    return np.vstack(all_targets), np.vstack(all_probs)
+
+
 def evaluate(cfg: MixedConfig, checkpoint_path: Path | None = None) -> None:
     if checkpoint_path is None:
         checkpoint_path = cfg.output_dir / "best.pt"
@@ -76,16 +96,7 @@ def evaluate(cfg: MixedConfig, checkpoint_path: Path | None = None) -> None:
 
     _, _, test_loader = get_dataloaders(cfg)
 
-    all_probs: list[np.ndarray] = []
-    all_targets: list[np.ndarray] = []
-    for inputs, targets in tqdm(test_loader, desc="Evaluating"):
-        with torch.no_grad():
-            logits = model(inputs.to(cfg.device, non_blocking=True))
-        all_probs.append(torch.sigmoid(logits.float()).cpu().numpy())
-        all_targets.append(targets.numpy().astype(np.int64))
-
-    probs  = np.vstack(all_probs)
-    y_true = np.vstack(all_targets)
+    y_true, probs = collect_probs(model, test_loader, cfg.device)
     y_pred = predict_multihot(probs)
 
     # Single computation path for the F1 numbers: headline macro-F1 is the

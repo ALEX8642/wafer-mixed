@@ -171,3 +171,66 @@ is 0.007, so 2 decimals reads as all-zeros.)
 **Next (Phase 2, fresh session, after metrics land here):** transfer study —
 3 arms (scratch / WM-811K supervised init / wafer-ssl SimCLR init) via
 `backbone_ckpt_path`, same budget + seeds, results → docs/TRANSFER.md.
+
+## Phase 2 — Transfer study ✅ (2026-07-02)
+
+**Done (code on this machine, 21-run sweep executed remotely on the 5090):**
+- `train_fraction` config + `subsample_indices` in data.py: per-combo
+  stratified, deterministic per (fraction, seed), identical subset across
+  arms → paired deltas. Plan updated with the data-fraction sweep rationale.
+- `load_donor_backbone` factored out of train(); accepts both donor formats
+  (`backbone_state_dict` SSL export / `model_state_dict` supervised ckpt,
+  fc.* dropped). **Donor facts verified on the 5090:** supervised donor =
+  wafer-defect-classifier/outputs/best.pt (134 tensors incl. CBAM,
+  key-compatible); the pretrained_backbone.pt sitting in the main repo is
+  byte-identical (md5) to wafer-ssl's SimCLR export — not a separate donor.
+- `scripts/transfer_study.py`: 3 arms × {1.0, 0.1, 0.01} × seeds
+  (42 full; 42/43/44 small), resumable via results.csv, cheapest cells
+  first. **Budget bug caught mid-sweep:** patience-7 killed a 1 % scratch
+  run at val F1 0.08 (~90 gradient steps total); sub-fraction cells now
+  scale epochs ×(1/fraction) capped at 300, patience 30. First sweep's
+  partial results were invalidated and the sweep rerun in full.
+- `scripts/plot_transfer.py` → assets/transfer_curves.png (curves + min–max
+  seed bands). Full narrative + tables in **docs/TRANSFER.md**.
+- Sanity check: in-sweep scratch@100 % reproduced Phase 1 exactly
+  (0.9846 / 0.9696, stop at epoch 14).
+- Tests 38 passing (subsample determinism/coverage/floor, both donor
+  formats, arch-mismatch guard, + Grad-CAM suite below).
+- /code-review run pre-commit (4 minor findings; shared collect_probs
+  helper + one-time test-loader build applied, figure label collision
+  checked clear on the real render).
+
+**Headline results (test macro-F1, mean over seeds):**
+| train maps | scratch | supervised | simclr |
+|---|---|---|---|
+| 266 (1 %) | 0.877 | **0.965** | 0.885 |
+| 2,661 (10 %) | 0.980 | 0.978 | 0.981 |
+| 26,610 (100 %) | 0.985 | 0.985 | 0.982 |
+
+Transfer pays only in the low-data regime: supervised init +8.8 macro-F1
+pts at 1 % (every seed), both pretrained arms +27 exact-match pts
+(0.63 → 0.89). At ≥10 % initialisation is a wash — the honest null result.
+SimCLR's 1 % macro-F1 wash is a verified single-label story: Near-full
+(support 30) collapses to F1 0.000 on 2 of 3 seeds while all other labels
+stay ≥ 0.91. Full-data supervised exact-match 0.9851 vs 0.9696 (single
+seed, suggestive only).
+
+**Phase 3 prep done early (user request):** `src/wafer_mixed/explain.py` —
+Grad-CAM/Grad-CAM++ ported to multi-label (sigmoid, per-target-label CAMs,
+nested-CBAM-aware target layer) + 7 tests. Smoke on the Phase 1 ckpt:
+attention **does** separate superposed signatures (Center+Edge-Loc+Scratch:
+three disjoint per-label heatmaps at sigmoid 1.00); Edge-Ring+Scratch
+separation is partial — Edge-Ring heat spreads along the rim but shares the
+scratch region. 5 figures in local outputs/grad_cam/ (generated on this machine against a
+pulled copy of the Phase 1 ckpt; regenerate anywhere with
+`python -m wafer_mixed.explain`).
+
+**Run artifacts:** results.csv pulled to local outputs/transfer/ (gitignored
+backing record); per-run checkpoints (21 × best.pt) live on the 5090 in
+wafer-mixed/outputs/transfer/. assets/transfer_curves.png committed.
+
+**Next (Phase 3, fresh session):** calibration + explainability on mixes —
+per-label temperature scaling + thresholds (should also fix the SimCLR-style
+rare-label threshold sensitivity), curate Grad-CAM overlay gallery into
+assets/ (generator already in place), escapes/false-alarms cost framing per
+label. Note for thresholds: metrics.DEFAULT_THRESHOLD is the single source.
