@@ -36,3 +36,49 @@ Session handoff log. One phase per session (see workspace `PLAN-wafer-mixed.md`)
 ResNet-18+CBAM, 8-logit head, BCE-with-logits, D4 augmentation, metrics
 module (per-label F1, macro-F1, exact-match, single-vs-mixed breakdown),
 train from scratch on 5090.
+
+## Phase 1 — Multi-label baseline 🔨 code done, 5090 run pending (2026-07-01)
+
+**Done (implemented + tested on the 4090 laptop):**
+- `model.py`: ResNet-18+CBAM ported verbatim from the main repo; head → 8
+  logits (no sigmoid — BCEWithLogitsLoss). `cbam: true` in baseline.yaml.
+- `train.py`: BCE-with-logits (no pos_weight — combos near-uniform), AdamW,
+  cosine LR, AMP, early stop on val macro-F1@0.5. `backbone_ckpt_path` hook
+  ported for Phase 2 (empty = from scratch, the Phase 1 arm).
+- `data.py`: D4 augmentation on the train split only (labels are
+  D4-invariant, so multi-hot targets unchanged).
+- `metrics.py`: per-label F1, macro-F1 (8 labels), exact-match ratio,
+  normal/single/mixed subset breakdown, per-label recall by subset, and a
+  **spurious-activation matrix** S[i,j] = P(predict j | i true, j absent) —
+  the multi-label analogue of a confusion matrix.
+  Note: subset macro-F1 averages only labels with support in the subset
+  (Near-full/Random never mix; their zero-support F1=0 would distort it).
+- `evaluate.py`: full report + per_label_metrics.csv, metrics.json,
+  spurious_matrix.png in outputs/.
+- Tests: 23 passing (model shapes/CBAM count, hand-computed metrics,
+  augmentation one-hot invariance, plus the Phase 0 suite).
+- `/code-review` findings applied: decision threshold lives once in
+  `metrics.DEFAULT_THRESHOLD`; evaluate restores `input_size` (not just
+  arch/cbam) from the checkpoint; first epoch always checkpoints (no stale
+  best.pt after a diverged run); `backbone_ckpt_path` anchored to repo root
+  like other paths; source-checkpoint `fc.*` keys dropped before backbone
+  load (9-class vs 8-logit shape clash); `--pretrained/--no-pretrained`,
+  `--cbam/--no-cbam` both directions on CLI.
+- Smoke run (1 epoch, 4090): pipeline converges — val macro-F1 0.9473 after
+  a single epoch; GAN-synthesized data is learnable fast, expect the full
+  run to saturate early. Smoke run already shows Scratch as the dominant
+  spurious label inside mixes (Edge-Ring→+Scratch 0.43) — watch whether
+  that persists at convergence.
+
+**To run on the 5090 (own terminal, then paste final metrics here):**
+```bash
+cd wafer-mixed && source ../.venv/bin/activate
+python -m wafer_mixed.train                 # batch 128 default, ~30 epochs w/ early stop
+python -m wafer_mixed.evaluate              # prints tables; artifacts → outputs/
+```
+
+**Metrics table (fill from the 5090 run):** _pending_
+
+**Next (Phase 2, fresh session, after metrics land here):** transfer study —
+3 arms (scratch / WM-811K supervised init / wafer-ssl SimCLR init) via
+`backbone_ckpt_path`, same budget + seeds, results → docs/TRANSFER.md.

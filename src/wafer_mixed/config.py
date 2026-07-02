@@ -1,8 +1,9 @@
 """
 config.py — MixedConfig dataclass, YAML + CLI loading, device selection.
 
-Mirrors wafer-defect-classifier's config.py. Phase 0 keeps only the fields
-the data pipeline needs; training fields are added in Phase 1.
+Mirrors wafer-defect-classifier's config.py. Phase 1 adds the training and
+model fields (ported from the main repo; focal/pseudo-label fields are not
+ported — multi-label BCE replaces them).
 
 Usage:
     from wafer_mixed.config import MixedConfig, build_arg_parser
@@ -71,10 +72,27 @@ class MixedConfig:
     test_frac: float = 0.20       # test fraction of all rows
     val_frac: float = 0.125       # val fraction of the remaining train pool (≈10 % of total)
 
+    # --- training (Phase 1) ---
+    num_epochs: int = 30
+    lr: float = 1e-3
+    weight_decay: float = 1e-4
+    patience: int = 7              # early-stopping: epochs without val macro-F1 gain
+
+    # --- model (Phase 1) ---
+    arch: str = "resnet18"         # resnet18 | resnet50
+    pretrained: bool = False       # ImageNet weights transfer weakly to wafer maps
+    cbam: bool = True              # append CBAM after each ResNet stage (ported default)
+    cbam_reduction: int = 16       # channel reduction ratio inside CBAM
+
+    # --- transfer study (Phase 2 uses this; empty = random init) ---
+    backbone_ckpt_path: str = ""   # path to a backbone checkpoint from the main repo / wafer-ssl
+
     def __post_init__(self) -> None:
         self.data_root = _anchor(Path(self.data_root))
         self.output_dir = _anchor(Path(self.output_dir))
         self.split_path = _anchor(Path(self.split_path))
+        if self.backbone_ckpt_path:
+            self.backbone_ckpt_path = str(_anchor(Path(self.backbone_ckpt_path)))
         self.device = _resolve_device(self.device)
 
     @classmethod
@@ -134,4 +152,19 @@ def build_arg_parser(description: str = "wafer-mixed") -> argparse.ArgumentParse
     p.add_argument("--num-workers", dest="num_workers", type=int, default=None)
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--input-size", dest="input_size", type=int, default=None)
+    p.add_argument("--num-epochs", dest="num_epochs", type=int, default=None)
+    p.add_argument("--lr", type=float, default=None)
+    p.add_argument("--weight-decay", dest="weight_decay", type=float, default=None)
+    p.add_argument("--patience", type=int, default=None)
+    p.add_argument("--arch", type=str, default=None, help="resnet18 | resnet50")
+    p.add_argument("--pretrained", dest="pretrained",
+                   action=argparse.BooleanOptionalAction, default=None,
+                   help="Use ImageNet pretrained weights (transfers weakly to wafer maps)")
+    p.add_argument("--cbam", dest="cbam",
+                   action=argparse.BooleanOptionalAction, default=None,
+                   help="CBAM attention after each ResNet stage (--no-cbam to disable)")
+    p.add_argument("--cbam-reduction", dest="cbam_reduction", type=int, default=None,
+                   help="CBAM channel reduction ratio (default 16)")
+    p.add_argument("--backbone-ckpt-path", dest="backbone_ckpt_path", type=str, default=None,
+                   help="Path to a pretrained backbone checkpoint; empty = random init")
     return p

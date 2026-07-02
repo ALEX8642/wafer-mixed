@@ -25,6 +25,7 @@ every later phase sees the identical split.
 """
 from __future__ import annotations
 
+import random
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -118,6 +119,12 @@ class MixedWaferDataset(Dataset):
 
     Yields (tensor, target) where tensor is (3, input_size, input_size) and
     target is an 8-dim float32 multi-hot vector (BCE-with-logits ready).
+
+    Augmentation (train split only): random D4 transforms — 90° rotations and
+    flips — exactly as in wafer-defect-classifier. The 8 basic defect labels
+    are all D4-invariant (a rotated Scratch is still a Scratch; Edge-Ring,
+    Center, Donut, Near-full, Random are symmetric by nature), so the
+    multi-hot target is unchanged. No crops: cropping removes edge patterns.
     """
 
     def __init__(
@@ -125,11 +132,13 @@ class MixedWaferDataset(Dataset):
         maps: np.ndarray,
         labels: np.ndarray,
         input_size: int = 224,
+        augment: bool = False,
     ) -> None:
         assert len(maps) == len(labels), "maps/labels length mismatch"
         self.maps = maps
         self.targets = torch.tensor(labels, dtype=torch.float32)
         self.input_size = input_size
+        self.augment = augment
 
     def __len__(self) -> int:
         return len(self.maps)
@@ -137,6 +146,14 @@ class MixedWaferDataset(Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         tensor = encode_map(self.maps[idx])
         tensor = resize_map(tensor, self.input_size)
+        if self.augment:
+            k = random.randint(0, 3)
+            if k:
+                tensor = torch.rot90(tensor, k, dims=[1, 2])
+            if random.random() < 0.5:
+                tensor = torch.flip(tensor, dims=[2])  # horizontal flip
+            if random.random() < 0.5:
+                tensor = torch.flip(tensor, dims=[1])  # vertical flip
         return tensor, self.targets[idx]
 
 
@@ -199,7 +216,9 @@ def get_dataloaders(cfg: MixedConfig) -> Tuple[DataLoader, DataLoader, DataLoade
 
     def _loader(name: str, shuffle: bool) -> DataLoader:
         idx = splits[name]
-        ds = MixedWaferDataset(maps[idx], labels[idx], cfg.input_size)
+        ds = MixedWaferDataset(
+            maps[idx], labels[idx], cfg.input_size, augment=(name == "train")
+        )
         return DataLoader(
             ds,
             batch_size=cfg.batch_size,

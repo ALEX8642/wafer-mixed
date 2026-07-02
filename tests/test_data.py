@@ -77,6 +77,19 @@ def test_dataset_yields_multihot_float():
     assert target_normal.sum() == 0
 
 
+def test_augmentation_preserves_onehot_and_target():
+    """D4 augmentation must keep the map one-hot and never touch the target."""
+    maps = np.stack([_synthetic_wafer()] * 4)
+    labels = np.tile(np.array([[0, 1, 0, 1, 0, 0, 0, 0]], dtype=np.int32), (4, 1))
+    ds = MixedWaferDataset(maps, labels, input_size=64, augment=True)
+    for i in range(len(ds)):
+        tensor, target = ds[i]
+        assert tensor.shape == (3, 64, 64)
+        # rot90/flip permute pixels but each pixel stays a valid one-hot triple
+        np.testing.assert_allclose(tensor.sum(dim=0).numpy(), 1.0)
+        np.testing.assert_array_equal(target.numpy(), labels[i].astype(np.float32))
+
+
 def test_combo_helpers():
     row = np.array([1, 0, 0, 0, 0, 0, 1, 0])
     assert combo_name(row) == "Center+Scratch"
