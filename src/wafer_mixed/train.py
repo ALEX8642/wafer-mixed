@@ -79,8 +79,9 @@ def _epoch(
                 scaler.update()
 
             total_loss += loss.item() * inputs.size(0)
-            all_preds.append(predict_multihot(torch.sigmoid(logits.float()).cpu().numpy()))
-            # the loader already gave us targets on CPU — no round trip needed
+            # all_preds.append(predict_multihot(torch.sigmoid(logits.float()).cpu().numpy()))
+            all_preds.append(predict_multihot(torch.sigmoid(logits.float()).detach().cpu().numpy()))
+	    # the loader already gave us targets on CPU — no round trip needed
             all_targets.append(targets_cpu.numpy().astype(np.int64))
 
     avg_loss = total_loss / len(loader.dataset)
