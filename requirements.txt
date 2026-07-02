@@ -1,0 +1,12 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+# cu128 build: required for 5090 (sm_120 Blackwell); also runs on 4090 (sm_89 Ada)
+# Use >=2.7.1 — 2.7.0 had sm_120 kernel packaging gaps; 2.7.1 resolved them
+torch>=2.7.1,<2.9
+torchvision>=0.22.1,<0.24
+
+numpy==2.2.3
+scikit-learn==1.6.1
+matplotlib==3.10.1
+pyyaml==6.0.2
+tqdm==4.67.1

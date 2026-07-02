@@ -1,0 +1,16 @@
+data/raw/*
+!data/raw/.gitkeep
+outputs/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.pt
+*.pth
+*.log
+.DS_Store
+*.zip
+*.pkl

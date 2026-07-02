@@ -1,0 +1,22 @@
+# baseline.yaml — shared config for all machines.
+#
+# Batch size guidance (same policy as wafer-defect-classifier):
+#   4090 laptop  (24 GB VRAM): batch_size: 64
+#   5090 desktop (32 GB VRAM): batch_size: 128  ← default
+# Override at runtime: --batch-size 64
+#
+# Training fields (epochs, lr, loss, cbam, backbone_ckpt_path) are added in
+# Phase 1 when the model is ported.
+
+data_root: data/raw          # relative to repo root; anchored to REPO_ROOT at load time
+output_dir: outputs          # checkpoints, logs, plots
+split_path: data/splits.npz  # persisted train/val/test indices (committed)
+batch_size: 128
+num_workers: 4               # set to 0 on Windows if multiprocessing errors
+seed: 42
+input_size: 224              # square resize target for the 52×52 maps
+device: auto                 # "auto" → cuda if available else cpu; or "cuda"/"cpu"/"mps"
+
+# Split fractions — stratified by full 38-type combination
+test_frac: 0.20              # 20 % test
+val_frac: 0.125              # 12.5 % of the remaining pool ≈ 10 % of total
