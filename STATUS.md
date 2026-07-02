@@ -151,6 +151,23 @@ Per-label CSV : /home/alex8642/wafer-classifier/wafer-mixed/outputs/per_label_me
 Metrics JSON  : /home/alex8642/wafer-classifier/wafer-mixed/outputs/metrics.json
 Spurious matrix: /home/alex8642/wafer-classifier/wafer-mixed/outputs/spurious_matrix.png
 
+**Artifacts pulled from the 5090 (2026-07-02):** `spurious_matrix.png` →
+`assets/` (committed, below); `metrics.json` + `per_label_metrics.csv` →
+local `outputs/` (gitignored, backing record for the tables above).
+`best.pt` stays on the 5090. Standing rule from here on: each phase's
+run figures land in `assets/` and get referenced in STATUS.md.
+
+![Spurious activation matrix — Edge-Ring and Scratch are the only sticky false-positive columns inside mixes; the smoke run's Edge-Ring→+Scratch 0.43 collapsed to ~0.005 at convergence](assets/spurious_matrix.png)
+
+(Polish note for Phase 4: regenerate with 3-decimal annotations — max cell
+is 0.007, so 2 decimals reads as all-zeros.)
+
+**Phase 2 donor checkpoints verified on the 5090 (2026-07-02):**
+- WM-811K supervised: `wafer-defect-classifier/outputs/best.pt`
+  (loader drops `fc.*`; `pretrained_backbone.pt` also present there —
+  confirm in Phase 2 which is the WM-811K-trained donor vs ImageNet init)
+- wafer-ssl SimCLR: `wafer-ssl/outputs/pretrained_backbone.pt`
+
 **Next (Phase 2, fresh session, after metrics land here):** transfer study —
 3 arms (scratch / WM-811K supervised init / wafer-ssl SimCLR init) via
 `backbone_ckpt_path`, same budget + seeds, results → docs/TRANSFER.md.
