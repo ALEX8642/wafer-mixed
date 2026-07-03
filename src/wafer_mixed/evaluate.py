@@ -201,7 +201,7 @@ def _save_spurious_heatmap(S: np.ndarray, output_dir: Path) -> None:
     plt.colorbar(im, ax=ax)
     for i in ticks:
         for j in ticks:
-            cell = _fmt(S[i, j], ".2f")
+            cell = _fmt(S[i, j], ".3f")
             ax.text(j, i, cell, ha="center", va="center", fontsize=7,
                     color="white" if (not np.isnan(S[i, j]) and S[i, j] > 0.5 * np.nanmax(S)) else "black")
     plt.tight_layout()

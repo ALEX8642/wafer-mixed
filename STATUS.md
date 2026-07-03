@@ -346,3 +346,50 @@ assets/: reliability_diagram.png + 5 gradcam_*.png committed.
 6. Wherever README mentions thresholds.json: the tuned τ apply to
    temperature-scaled probs (the file embeds per-label T for that reason).
 7. /code-review pre-commit (inline, no sub-agents), commit, push.
+
+## Phase 4 — Package ✅ (2026-07-02)
+
+**Done:**
+- Spurious-matrix polish: `_save_spurious_heatmap` annotations 2 → 3
+  decimals; evaluate rerun locally on CPU against outputs/best.pt —
+  **reproduced the Phase 1 5090 numbers exactly** (macro-F1 0.9846,
+  exact-match 0.9696, same top spurious cells); regenerated
+  spurious_matrix.png → assets/ (matrix no longer reads as all-zeros).
+- README.md rewritten for the completed study: three-finding summary table
+  (each with its honest caveat inline), per-label baseline table, transfer
+  table linking docs/TRANSFER.md, calibration/threshold table with the
+  thresholds.json coupling note (tuned τ apply to temperature-scaled probs;
+  the file embeds per-label T), Grad-CAM gallery, quickstart covering all
+  five stages + the transfer sweep, data-boundary statement, limitations
+  (GAN saturation, small-support labels, single-seed full-data runs).
+  All numbers copied from this file, none recomputed — except the evaluate
+  rerun above, which doubled as a reproduction check.
+- Cross-links: main repo README "Self-supervised + ensemble extension"
+  section → "Extensions" (wafer-ssl paragraph unchanged, wafer-mixed
+  paragraph added); workspace ROADMAP.md wafer-mixed moved to Done;
+  ALEX8642 profile README wafer-mixed moved from "In progress" into the
+  portfolio table. (Main-repo/profile commits are separate, in their repos.)
+- **Resume bullet (macro-F1 phrasing chosen):**
+  > Extended a wafer-defect CNN pipeline to multi-label classification of
+  > mixed defect patterns (MixedWM38, test macro-F1 0.985); a controlled
+  > transfer study showed pretrained initialisation pays only when labels
+  > are scarce (+8.8 F1 pts at 1 % of training data), and per-label decision
+  > thresholds cut defect escapes 36 % at a 10:1 escape:false-alarm cost
+  > ratio.
+  Why over the exact-match phrasing: it carries all three findings (model,
+  transfer rigor, cost-aware operating point) instead of one, the escapes/
+  cost-ratio clause speaks directly to manufacturing-quality readers, and
+  "0.63 → 0.89 exact-match" needs context a resume line can't provide —
+  cold, 0.63 reads as a weak model rather than a scarce-data baseline.
+- Fresh-clone quickstart verified end-to-end in a temp dir (this box is
+  CPU-only, so `train` was smoked with `--num-epochs 1` per the plan; full
+  training claims remain from the 5090 runs): clone → `pip install -e .` →
+  download (412 MB, SHA256 + shape/combo checks pass) → 47 tests pass →
+  train 1 epoch on CPU (~21 min, val macro-F1 0.9652 — in line with the
+  5090's epoch-1 0.9324 and the 4090 smoke's 0.9473) → evaluate → calibrate
+  → explain
+  (all 5 Grad-CAM figures regenerate). Every quickstart command ran as
+  written in the README.
+
+**Next:** project complete — no further phases. Follow-on work happens in
+the root-cause / SQL pipeline repo (workspace ROADMAP.md project 2).
