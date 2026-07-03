@@ -322,8 +322,27 @@ coupling: the tuned τ apply to temperature-scaled probabilities, so
 thresholds.json embeds the per-label T alongside the thresholds.
 assets/: reliability_diagram.png + 5 gradcam_*.png committed.
 
-**Next (Phase 4, fresh session):** package — README with results tables,
-transfer narrative, Grad-CAM gallery, quickstart, cross-links to
-wafer-defect-classifier and wafer-ssl; update main repo README extension
-section + workspace ROADMAP; draft resume bullet. Polish note from Phase 1
-still open: regenerate spurious_matrix.png with 3-decimal annotations.
+**Next (Phase 4, fresh session):** package.
+
+1. *Phase 1 polish first* (produces a README asset): in evaluate.py's
+   `_save_spurious_heatmap`, cell annotations 2 → 3 decimals (max cell is
+   0.007 — 2 decimals reads as all-zeros); rerun
+   `python -m wafer_mixed.evaluate` locally against outputs/best.pt (CPU
+   fine, ~3 min); copy regenerated spurious_matrix.png → assets/.
+2. README.md: results tables for all three phases (numbers from this file —
+   do not recompute), transfer narrative linking docs/TRANSFER.md, Grad-CAM
+   gallery from assets/, quickstart (download_data → train → evaluate →
+   calibrate → explain), public-data/zero-IP boundary statement, cross-links
+   to wafer-defect-classifier and wafer-ssl.
+3. Update main repo README extension section + workspace ROADMAP.md to point
+   here.
+4. Resume bullet, honest numbers — two equally honest phrasings, pick one:
+   macro-F1 version (0.9846 multi-label; transfer +8.8 F1 pts at 1 % data;
+   thresholds −36 % escapes at 10:1 costing) or exact-match version
+   (0.63 → 0.89 at 1 % data via pretrained init).
+5. Verify quickstart on a fresh clone to a temp dir. Caveat: this box is
+   CPU-only — smoke `train` with `--num-epochs 1` (or verify download +
+   evaluate path only) and say so; full training claims stay on the 5090.
+6. Wherever README mentions thresholds.json: the tuned τ apply to
+   temperature-scaled probs (the file embeds per-label T for that reason).
+7. /code-review pre-commit (inline, no sub-agents), commit, push.
