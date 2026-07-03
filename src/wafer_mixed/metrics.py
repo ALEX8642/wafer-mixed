@@ -28,16 +28,22 @@ from typing import Dict
 import numpy as np
 from sklearn.metrics import f1_score
 
-# Phase 1 decision rule: fixed sigmoid threshold. Phase 3 replaces this with
-# per-label tuned thresholds — change it HERE so train early-stopping and
-# evaluation always share the same rule.
+# Default decision rule: fixed sigmoid threshold, shared by train
+# early-stopping and evaluation — change it HERE. Phase 3's calibrate.py
+# tunes a per-label threshold vector on the val set (outputs/thresholds.json)
+# and passes it through the same function below.
 DEFAULT_THRESHOLD = 0.5
 
 
 def predict_multihot(
-    probs: np.ndarray, threshold: float = DEFAULT_THRESHOLD
+    probs: np.ndarray, threshold: float | np.ndarray = DEFAULT_THRESHOLD
 ) -> np.ndarray:
-    """Hard {0,1} multi-hot predictions from sigmoid probabilities."""
+    """
+    Hard {0,1} multi-hot predictions from sigmoid probabilities.
+
+    threshold: scalar, or a per-label vector of shape (n_labels,) — the
+    Phase 3 tuned thresholds — broadcast across the label axis.
+    """
     return (probs > threshold).astype(np.int64)
 
 

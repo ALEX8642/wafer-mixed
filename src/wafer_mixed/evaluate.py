@@ -4,8 +4,8 @@ evaluate.py — Test-set evaluation for the multi-label baseline.
 Entry point: python -m wafer_mixed.evaluate [--config configs/baseline.yaml]
              [--checkpoint path]
 
-Reports (all at the fixed 0.5 sigmoid threshold — per-label tuned thresholds
-are Phase 3):
+Reports (all at the fixed 0.5 sigmoid threshold — the untuned baseline view;
+calibrate.py produces per-label tuned thresholds and the calibrated report):
     - Per-label precision/recall/F1/support and macro-F1 over the 8 labels.
     - Exact-match ratio (all 8 labels simultaneously correct).
     - Single-vs-mixed breakdown: same metrics on single-defect and
@@ -29,6 +29,7 @@ matplotlib.use("Agg")  # headless — no display required
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from scipy.special import expit
 from sklearn.metrics import precision_recall_fscore_support
 from tqdm import tqdm
 
@@ -42,7 +43,7 @@ from wafer_mixed.metrics import (
     subset_breakdown,
     subset_masks,
 )
-from wafer_mixed.model import build_model
+from wafer_mixed.model import load_checkpoint_model
 
 
 def _fmt(x: float, spec: str = ".4f") -> str:
@@ -50,46 +51,40 @@ def _fmt(x: float, spec: str = ".4f") -> str:
     return "—" if np.isnan(x) else format(x, spec)
 
 
-def collect_probs(
+def collect_logits(
     model: torch.nn.Module, loader, device: str,
     desc: str = "Evaluating", leave: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Run the model over a loader. Returns (y_true (N,8) int64, sigmoid probs
-    (N,8) float). Single implementation of the prediction-collection loop,
-    shared with scripts/transfer_study.py so a future decision-rule change
-    (e.g. Phase 3 per-label thresholds applied to probs) lands in one place.
+    Run the model over a loader. Returns (y_true (N,8) int64, raw logits
+    (N,8) float32). Single implementation of the prediction-collection loop,
+    shared with calibrate.py (which needs pre-sigmoid logits for temperature
+    fitting) and, via collect_probs, scripts/transfer_study.py.
     """
-    all_probs: list[np.ndarray] = []
+    all_logits: list[np.ndarray] = []
     all_targets: list[np.ndarray] = []
     for inputs, targets in tqdm(loader, desc=desc, leave=leave):
         with torch.no_grad():
             logits = model(inputs.to(device, non_blocking=True))
-        all_probs.append(torch.sigmoid(logits.float()).cpu().numpy())
+        all_logits.append(logits.float().cpu().numpy())
         all_targets.append(targets.numpy().astype(np.int64))
-    return np.vstack(all_targets), np.vstack(all_probs)
+    return np.vstack(all_targets), np.vstack(all_logits)
+
+
+def collect_probs(
+    model: torch.nn.Module, loader, device: str,
+    desc: str = "Evaluating", leave: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """collect_logits with sigmoid applied: (y_true (N,8) int64, probs (N,8))."""
+    y_true, logits = collect_logits(model, loader, device, desc, leave)
+    return y_true, expit(logits)  # numerically stable sigmoid
 
 
 def evaluate(cfg: MixedConfig, checkpoint_path: Path | None = None) -> None:
     if checkpoint_path is None:
         checkpoint_path = cfg.output_dir / "best.pt"
 
-    ckpt = torch.load(checkpoint_path, map_location=cfg.device, weights_only=False)
-
-    # Honour every setting that shapes the model or its input from the
-    # checkpoint, so an edited baseline.yaml between training and evaluation
-    # can't mismatch state-dict keys — or silently evaluate at a different
-    # resolution than the model was trained on (adaptive pooling would accept
-    # it without complaint). New model hyperparameters must be added here.
-    saved_cfg = ckpt.get("cfg", {})
-    cfg.arch = str(saved_cfg.get("arch", cfg.arch))
-    cfg.cbam = bool(saved_cfg.get("cbam", cfg.cbam))
-    cfg.cbam_reduction = int(saved_cfg.get("cbam_reduction", cfg.cbam_reduction))
-    cfg.input_size = int(saved_cfg.get("input_size", cfg.input_size))
-
-    model = build_model(cfg).to(cfg.device)
-    model.load_state_dict(ckpt["model_state_dict"])
-    model.eval()
+    model, ckpt = load_checkpoint_model(cfg, checkpoint_path)
 
     print(f"Checkpoint : {checkpoint_path}  (epoch {ckpt.get('epoch', '?')}, "
           f"val macro-F1 {ckpt.get('val_macro_f1', float('nan')):.4f})")

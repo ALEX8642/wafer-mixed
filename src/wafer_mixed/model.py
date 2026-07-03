@@ -20,6 +20,8 @@ CBAM (Convolutional Block Attention Module — Woo et al., ECCV 2018):
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -113,3 +115,29 @@ def build_model(cfg: MixedConfig, num_labels: int = NUM_LABELS) -> nn.Module:
         backbone.layer4 = nn.Sequential(backbone.layer4, CBAM(stage_channels[3], r))
 
     return backbone
+
+
+def load_checkpoint_model(
+    cfg: MixedConfig, checkpoint_path: Path
+) -> tuple[nn.Module, dict]:
+    """
+    Load a training checkpoint for inference. Returns (model in eval mode, ckpt).
+
+    Honours every setting that shapes the model or its input from the
+    checkpoint — mutating cfg in place — so an edited baseline.yaml between
+    training and inference can't mismatch state-dict keys, or silently run at
+    a different resolution than the model was trained on (adaptive pooling
+    would accept it without complaint). New model hyperparameters must be
+    added here. Single loading path for evaluate / explain / calibrate.
+    """
+    ckpt = torch.load(checkpoint_path, map_location=cfg.device, weights_only=False)
+    saved_cfg = ckpt.get("cfg", {})
+    cfg.arch = str(saved_cfg.get("arch", cfg.arch))
+    cfg.cbam = bool(saved_cfg.get("cbam", cfg.cbam))
+    cfg.cbam_reduction = int(saved_cfg.get("cbam_reduction", cfg.cbam_reduction))
+    cfg.input_size = int(saved_cfg.get("input_size", cfg.input_size))
+
+    model = build_model(cfg).to(cfg.device)
+    model.load_state_dict(ckpt["model_state_dict"])
+    model.eval()
+    return model, ckpt

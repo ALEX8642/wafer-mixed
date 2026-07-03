@@ -38,7 +38,7 @@ from torch import nn
 from wafer_mixed.config import MixedConfig, build_arg_parser
 from wafer_mixed.data import LABEL_NAMES, combo_name, get_dataloaders
 from wafer_mixed.metrics import DEFAULT_THRESHOLD
-from wafer_mixed.model import CBAM, build_model
+from wafer_mixed.model import CBAM, load_checkpoint_model
 
 
 # ---------------------------------------------------------------------------
@@ -252,16 +252,7 @@ def generate_mixed_cam_examples(
         checkpoint_path = cfg.output_dir / "best.pt"
     combos = _EXAMPLE_COMBOS if combos is None else combos
 
-    ckpt = torch.load(checkpoint_path, map_location=cfg.device, weights_only=False)
-    saved_cfg = ckpt.get("cfg", {})
-    cfg.arch = str(saved_cfg.get("arch", cfg.arch))
-    cfg.cbam = bool(saved_cfg.get("cbam", cfg.cbam))
-    cfg.cbam_reduction = int(saved_cfg.get("cbam_reduction", cfg.cbam_reduction))
-    cfg.input_size = int(saved_cfg.get("input_size", cfg.input_size))
-
-    model = build_model(cfg).to(cfg.device)
-    model.load_state_dict(ckpt["model_state_dict"])
-    model.eval()
+    model, _ = load_checkpoint_model(cfg, checkpoint_path)
 
     cam_cls = GradCAMPlusPlus if method == "gradcampp" else GradCAM
     print(f"  Method: {cam_cls.__name__}")
